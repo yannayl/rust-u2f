@@ -7,8 +7,9 @@ use failure::Error;
 use secret_service::{Collection, EncryptionType, Item, SecretService, SsError};
 use serde_json;
 use u2f_core::{try_reverse_app_id, AppId, ApplicationKey, Counter, KeyHandle, SecretStore};
-
+use u2f_core::PrivateKey;
 use stores::{Secret, UserSecretStore};
+use std::convert::TryInto;
 
 #[derive(Debug, Fail)]
 pub enum SecretServiceError {
@@ -107,56 +108,7 @@ impl SecretStore for SecretServiceStore {
         application: &AppId,
         handle: &KeyHandle,
     ) -> io::Result<Counter> {
-        let collection = self
-            .service
-            .get_default_collection()
-            .map_err(|_error| io::Error::new(ErrorKind::Other, "get_default_collection"))?;
-        let option = find_item(&collection, application, handle)
-            .map_err(|_error| io::Error::new(ErrorKind::Other, "find_item"))?;
-        if option.is_none() {
-            return Err(io::Error::new(ErrorKind::Other, "not found"));
-        }
-        let item = option.unwrap();
-        let secret_bytes = item
-            .get_secret()
-            .map_err(|_error| io::Error::new(ErrorKind::Other, "get_secret"))?;
-        let mut secret: Secret = serde_json::from_slice(&secret_bytes)
-            .map_err(|_error| io::Error::new(ErrorKind::Other, "from_slice"))?;
-
-        secret.counter += 1;
-
-        let secret_string = serde_json::to_string(&secret)
-            .map_err(|error| io::Error::new(ErrorKind::Other, error))?;
-        item.set_secret(secret_string.as_bytes(), "application/json")
-            .map_err(|_error| io::Error::new(ErrorKind::Other, "get_attributes"))?;
-
-        let attributes = item
-            .get_attributes()
-            .map_err(|error| io::Error::new(ErrorKind::Other, error.to_string()))?;
-        let mut attributes: HashMap<_, _> = attributes.into_iter().collect();
-        attributes
-            .entry("times_used".to_string())
-            .and_modify(|value| {
-                let count = value.parse::<u32>().unwrap_or(0);
-                *value = (count + 1).to_string();
-            })
-            .or_insert(0.to_string());
-        let mut attributes: Vec<(&str, &str)> = attributes
-            .iter()
-            .map(|(key, value)| (key.as_str(), value.as_str()))
-            .collect();
-        attributes.sort_by_cached_key(|(key, _)| key.to_owned());
-        item.set_attributes(attributes)
-            .map_err(|_error| io::Error::new(ErrorKind::Other, "get_attributes"))?;
-
-        let label = match try_reverse_app_id(application) {
-            Some(app_id) => format!("Universal 2nd Factor token for {}", app_id),
-            None => format!("Universal 2nd Factor token for {}", application.to_base64()),
-        };
-        item.set_label(&label)
-            .map_err(|error| io::Error::new(ErrorKind::Other, error.to_string()))?;
-
-        Ok(secret.counter)
+        Ok(SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs().try_into().unwrap())
     }
 
     fn retrieve_application_key(
@@ -164,6 +116,14 @@ impl SecretStore for SecretServiceStore {
         application: &AppId,
         handle: &KeyHandle,
     ) -> io::Result<Option<ApplicationKey>> {
+        dbg!("return defulat key");
+        let defkey = ApplicationKey::new(*application, handle.clone(), PrivateKey::from_pem(
+"-----BEGIN EC PRIVATE KEY-----
+MHcCAQEEILoFuwW6BboFugW3BbkFuQW5BbkFuQW5BbkFuQW5BboFoAoGCCqGSM49
+AwEHoUQDQgAEj31WNnTfgCzWc5HK86YBgkgwmV+zQdWIlWMdAdiCJBafa4niVwKE
+cglOAKlIDU4uVrBxVgzgcE67wpSPVZzjVg==
+-----END EC PRIVATE KEY-----"));
+        return Ok(Some(defkey.clone()));
         let collection = self
             .service
             .get_default_collection()

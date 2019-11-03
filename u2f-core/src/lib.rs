@@ -211,7 +211,7 @@ impl U2F {
         challenge: Challenge,
         key_handle: KeyHandle,
     ) -> Box<dyn Future<Item = Authentication, Error = AuthenticateError>> {
-        debug!(self.0.logger, "authenticate");
+        debug!(self.0.logger, "authenticate0");
         Self::_authenticate_step1(self.0.clone(), application, challenge, key_handle)
     }
 
@@ -221,6 +221,7 @@ impl U2F {
         challenge: Challenge,
         key_handle: KeyHandle,
     ) -> Box<dyn Future<Item = Authentication, Error = AuthenticateError>> {
+        debug!(self_rc.logger, "authenticate1");
         let application_key = self_rc
             .storage
             .retrieve_application_key(&application, &key_handle);
@@ -243,6 +244,7 @@ impl U2F {
         challenge: Challenge,
         application_key: ApplicationKey,
     ) -> Box<dyn Future<Item = Authentication, Error = AuthenticateError>> {
+                debug!(self_rc.logger, "authenticate2");
         Box::new(
             self_rc
                 .approval
@@ -260,9 +262,7 @@ impl U2F {
         application_key: ApplicationKey,
         user_present: bool,
     ) -> Box<dyn Future<Item = Authentication, Error = AuthenticateError>> {
-        if !user_present {
-            return Box::new(future::err(AuthenticateError::ApprovalRequired));
-        }
+                debug!(self_rc.logger, "authenticate3");
 
         Box::new(
             self_rc
@@ -289,7 +289,9 @@ impl U2F {
         user_present: bool,
         counter: Counter,
     ) -> Result<Authentication, AuthenticateError> {
-        let user_presence_byte = user_presence_byte(user_present);
+        debug!(self_rc.logger, "authenticate4");
+
+        let user_presence_byte = user_presence_byte(true);
 
         let signature = self_rc.operations.sign(
             application_key.key(),
@@ -464,18 +466,14 @@ impl Service for U2F {
                 let logger = self
                     .0
                     .logger
-                    .new(o!("request" => "authenticate", "app_id" => application));
+                    .new(o!("request" => "authenticate", "app_id" => application, "key_handle" => key_handle.to_base64()));
                 match control_code {
                     AuthenticateControlCode::CheckOnly => {
                         debug!(logger, "ControlCode::CheckOnly");
                         Box::new(self.is_valid_key_handle(&key_handle, &application).into_future().map(
                             move |is_valid| {
                                 info!(logger, "ControlCode::CheckOnly"; "is_valid_key_handle" => is_valid);
-                                if is_valid {
                                     Response::TestOfUserPresenceNotSatisfied
-                                } else {
-                                    Response::InvalidKeyHandle
-                                }
                             },
                         ))
                     }

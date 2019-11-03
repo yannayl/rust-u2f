@@ -85,6 +85,7 @@ impl SecretStore for FileStoreV2 {
         application: &AppId,
         handle: &KeyHandle,
     ) -> io::Result<Counter> {
+        dbg!("fuck0");
         let mut data = self.read()?;
         let secret = data
             .find_secret_mut(application, handle)
